@@ -3,13 +3,13 @@ File: app/core/exceptions.py
 Description: 业务异常类与全局异常处理器
 
 本模块遵循 v2.1 架构规范：
-1. 业务异常基类（AppException）接受 BaseErrorCode 枚举
+1. 提供常用业务异常子类（Unauthorized, Permission, NotFound 等）
 2. 全局异常处理器自动将异常映射为：语义化 HTTP 状态码 + 字符串业务码
 3. 使用 ResponseModel.fail() 构造统一的失败响应信封
 
 Author: jinmozhe
 Created: 2025-11-24
-Updated: 2026-01-15 (v2.1 Modern Standard)
+Updated: 2026-02-02 (v2.1 Modern Standard)
 """
 
 from typing import Any
@@ -31,10 +31,7 @@ from app.core.response import ResponseModel
 class AppException(Exception):
     """
     应用基础异常类。
-
-    用法示例:
-        raise AppException(AuthError.PASSWORD_ERROR)
-        raise AppException(OrderError.STOCK_NOT_ENOUGH, message="库存仅剩1件")
+    所有业务异常都应继承此类，或者直接抛出此类。
     """
 
     def __init__(
@@ -43,12 +40,41 @@ class AppException(Exception):
         message: str = "",
         data: Any = None,
     ):
-        # 自动从枚举中解构: (HTTP状态, 业务码, 默认文案)
         self.http_status = error.http_status
         self.code = error.code
         self.message = message or error.msg
         self.data = data
         super().__init__(self.message)
+
+
+class UnauthorizedException(AppException):
+    """
+    401 未认证异常
+    通常由认证依赖 (deps.py) 抛出
+    """
+
+    def __init__(self, message: str = "", data: Any = None):
+        super().__init__(SystemErrorCode.UNAUTHORIZED, message=message, data=data)
+
+
+class PermissionException(AppException):
+    """
+    403 权限不足异常
+    通常由权限依赖 (deps.py) 抛出
+    """
+
+    def __init__(self, message: str = "", data: Any = None):
+        super().__init__(SystemErrorCode.FORBIDDEN, message=message, data=data)
+
+
+class NotFoundException(AppException):
+    """
+    404 资源未找到异常
+    通用工具异常，用于 Repository 或 Service 层
+    """
+
+    def __init__(self, message: str = "", data: Any = None):
+        super().__init__(SystemErrorCode.NOT_FOUND, message=message, data=data)
 
 
 # ------------------------------------------------------------------------------
@@ -57,7 +83,7 @@ class AppException(Exception):
 
 
 def _get_request_id(request: Request) -> str:
-    """尝试从 request.state 获取 request_id，如果不存在则返回 'unknown'"""
+    """从 request.state 获取 UUID v7 链路 ID"""
     return str(getattr(request.state, "request_id", "unknown"))
 
 
@@ -77,11 +103,9 @@ async def app_exception_handler(request: Request, exc: AppException) -> ORJSONRe
     logger.bind(
         request_id=request_id,
         code=exc.code,
-        http_status=exc.http_status,
         message=exc.message,
     ).warning("Business exception occurred")
 
-    # [变更] 使用类方法 ResponseModel.fail
     response_model = ResponseModel.fail(
         code=exc.code,
         message=exc.message,
@@ -91,7 +115,7 @@ async def app_exception_handler(request: Request, exc: AppException) -> ORJSONRe
 
     return ORJSONResponse(
         status_code=exc.http_status,
-        content=response_model.model_dump(),
+        content=response_model.model_dump(mode="json"),  # 强制 JSON 序列化
     )
 
 
@@ -108,7 +132,6 @@ async def validation_exception_handler(
     first_error = errors[0] if errors else {}
 
     # 获取出错字段路径: body -> email
-    # loc 示例: ('body', 'email')
     loc = first_error.get("loc", [])
     field_name = str(loc[-1]) if loc else "unknown"
     msg = first_error.get("msg", "Invalid parameter")
@@ -122,8 +145,6 @@ async def validation_exception_handler(
         raw_errors=errors,
     ).warning("Request validation failed")
 
-    # [变更] 使用类方法 ResponseModel.fail
-    # 将原始错误详情放入 data 以便前端调试 (可选)
     response_model = ResponseModel.fail(
         code=SystemErrorCode.INVALID_PARAMS.code,
         message=readable_message,
@@ -133,7 +154,7 @@ async def validation_exception_handler(
 
     return ORJSONResponse(
         status_code=SystemErrorCode.INVALID_PARAMS.http_status,
-        content=response_model.model_dump(),
+        content=response_model.model_dump(mode="json"),
     )
 
 
@@ -145,9 +166,12 @@ async def http_exception_handler(
     """
     request_id = _get_request_id(request)
 
-    # 构造一个通用的系统错误码
-    # 如果是 404，通常意味着路由没匹配到
-    code_str = "system.not_found" if exc.status_code == 404 else "system.http_error"
+    # 如果是 404，通常意味着路由没匹配到 (SystemErrorCode.NOT_FOUND)
+    # 否则归类为通用 HTTP 错误
+    if exc.status_code == 404:
+        code_str = SystemErrorCode.NOT_FOUND.code
+    else:
+        code_str = "system.http_error"
 
     logger.bind(
         request_id=request_id,
@@ -155,7 +179,6 @@ async def http_exception_handler(
         detail=str(exc.detail),
     ).warning("Framework HTTP exception occurred")
 
-    # [变更] 使用类方法 ResponseModel.fail
     response_model = ResponseModel.fail(
         code=code_str,
         message=str(exc.detail),
@@ -164,7 +187,7 @@ async def http_exception_handler(
 
     return ORJSONResponse(
         status_code=exc.status_code,
-        content=response_model.model_dump(),
+        content=response_model.model_dump(mode="json"),
     )
 
 
@@ -180,8 +203,6 @@ async def general_exception_handler(request: Request, exc: Exception) -> ORJSONR
         "Unhandled system exception occurred"
     )
 
-    # [变更] 使用类方法 ResponseModel.fail
-    # 屏蔽内部细节，返回通用系统错误
     response_model = ResponseModel.fail(
         code=SystemErrorCode.INTERNAL_ERROR.code,
         message=SystemErrorCode.INTERNAL_ERROR.msg,
@@ -190,7 +211,7 @@ async def general_exception_handler(request: Request, exc: Exception) -> ORJSONR
 
     return ORJSONResponse(
         status_code=SystemErrorCode.INTERNAL_ERROR.http_status,
-        content=response_model.model_dump(),
+        content=response_model.model_dump(mode="json"),
     )
 
 
@@ -205,13 +226,14 @@ def register_exception_handlers(app: FastAPI) -> None:
     应在 main.py 中调用。
     """
     # 捕获自定义业务异常
-    app.add_exception_handler(AppException, app_exception_handler)  # type: ignore
+    # 使用 type: ignore[arg-type] 压制类型检查警告
+    app.add_exception_handler(AppException, app_exception_handler)  # type: ignore[arg-type]
 
     # 捕获参数校验异常 (Override FastAPI default 422)
-    app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
 
     # 捕获 HTTP 协议异常 (404, 405 etc.)
-    app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
 
     # 捕获所有未处理的系统异常 (500)
     app.add_exception_handler(Exception, general_exception_handler)

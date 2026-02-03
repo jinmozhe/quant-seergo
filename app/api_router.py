@@ -3,18 +3,20 @@ File: app/api_router.py
 Description: 根 API 路由聚合层
 
 本模块负责：
-1. 聚合所有业务领域的 Router (auth, users, etc.)
+1. 聚合所有业务领域的 Router (auth, users, marketing, etc.)
 2. 统一设置路由前缀 (如 /auth, /users)
 3. 统一设置标签 (Tags) 用于 OpenAPI 文档分组
 
 Author: jinmozhe
 Created: 2025-12-05
+Updated: 2026-02-03 (Add Marketing Domain)
 """
 
 from fastapi import APIRouter
 
 # 导入领域路由
 from app.domains.auth.router import router as auth_router
+from app.domains.marketing.router import router as marketing_router
 from app.domains.users.router import router as users_router
 
 # 创建根 API 路由
@@ -32,6 +34,10 @@ api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 # 2. 用户模块 (Users Domain)
 # 包含用户注册、查询、更新等接口
 api_router.include_router(users_router, prefix="/users", tags=["users"])
+
+# 3. 营销模块 (Marketing Domain)
+# 包含报告选项树查询 (演示版)
+api_router.include_router(marketing_router, prefix="/marketing", tags=["marketing"])
 
 # 未来新增模块示例:
 # from app.domains.orders.router import router as orders_router

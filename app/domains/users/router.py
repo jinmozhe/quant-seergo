@@ -3,19 +3,23 @@ File: app/domains/users/router.py
 Description: 用户领域 HTTP 路由层
 
 本模块定义了用户管理的 API 端点。
-遵循 V3.0/V4.0 规范：
+遵循 V2.1 架构规范：
 1. 注册接口 (POST /) 保持公开
 2. 详情与更新接口 (GET/PATCH /me) 必须鉴权 (CurrentUser)
 3. 移除不安全的 /{user_id} 接口，防止越权访问 (IDOR)
+4. [Refactor] 统一使用 ResponseModel.success 类方法，移除全局魔法函数
 
 Author: jinmozhe
 Created: 2025-12-05
+Updated: 2026-02-02 (Unified Response Style)
 """
 
 from fastapi import APIRouter, Request, status
 
 from app.api.deps import CurrentUser
-from app.core.response import ResponseModel, success
+
+# [Change] 移除 success 快捷函数导入，仅保留 ResponseModel 类
+from app.core.response import ResponseModel
 
 # 使用类型别名，代码极简
 from app.domains.users.dependencies import UserServiceDep
@@ -51,7 +55,8 @@ async def create_user(
     req_id = getattr(request.state, "request_id", None)
 
     # 3. 返回统一响应信封
-    return success(
+    # [Change] 显式调用 ResponseModel.success 类方法
+    return ResponseModel.success(
         data=UserRead.model_validate(user),
         request_id=req_id,
         message="User created successfully",
@@ -80,7 +85,8 @@ async def read_user_me(
     # 直接返回即可，无需再次查询 Service
     req_id = getattr(request.state, "request_id", None)
 
-    return success(
+    # [Change] 显式调用 ResponseModel.success 类方法
+    return ResponseModel.success(
         data=UserRead.model_validate(current_user),
         request_id=req_id,
     )
@@ -107,7 +113,8 @@ async def update_user_me(
 
     req_id = getattr(request.state, "request_id", None)
 
-    return success(
+    # [Change] 显式调用 ResponseModel.success 类方法
+    return ResponseModel.success(
         data=UserRead.model_validate(updated_user),
         request_id=req_id,
         message="User profile updated successfully",

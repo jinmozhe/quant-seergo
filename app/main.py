@@ -116,6 +116,29 @@ def create_app() -> FastAPI:
         """
         return ResponseModel.success(data={"status": "ok"})
 
+    # 5. [新增] 根路由 (Root Endpoint)
+    @app.get(
+        "/",
+        tags=["root"],
+        summary="系统入口",
+        description="返回系统欢迎信息及关键入口链接。",
+        response_model=ResponseModel[dict[str, str]],
+    )
+    async def root():
+        """
+        系统根路径。
+        提供友好的欢迎信息，并暴露(混淆后的)文档地址，方便开发者跳转。
+        """
+        return ResponseModel.success(
+            message=f"Welcome to {settings.PROJECT_NAME}",
+            data={
+                "status": "running",
+                "docs_url": f"{obscure_prefix}/docs",  # 动态获取混淆地址
+                "redoc_url": f"{obscure_prefix}/redoc",  # 动态获取混淆地址
+                "health_url": f"{obscure_prefix}/health",  # 健康检查地址
+            },
+        )
+
     return app
 
 

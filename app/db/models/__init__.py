@@ -3,7 +3,7 @@ File: app/db/models/__init__.py
 Description: ORM 模型注册表
 
 本模块负责：
-1. 导入所有业务模型 (User, UserProfile, UserSocial)
+1. 导入所有业务模型 (User, MarketingReport, etc.)
 2. 导入基类 (Base, UUIDModel, Mixins)
 3. 导出它们供 Alembic (env.py) 自动发现 metadata
 
@@ -13,9 +13,13 @@ Description: ORM 模型注册表
 
 Author: jinmozhe
 Created: 2025-11-25
+Updated: 2026-02-03 (Add Marketing & Analysis models)
 """
 
 # 1. 导入基类与组件
+# 2. 导入业务模型
+# 注意：新增模型必须在此处导入，否则 Alembic 无法识别
+from app.db.models.analysis_dimension_result import AnalysisDimensionResult
 from app.db.models.base import (
     Base,
     SoftDeleteMixin,
@@ -23,9 +27,8 @@ from app.db.models.base import (
     UUIDBase,
     UUIDModel,
 )
-
-# 2. 导入业务模型
-# 注意：新增模型必须在此处导入，否则 Alembic 无法识别
+from app.db.models.marketing_report import MarketingReport
+from app.db.models.marketing_report_qa import MarketingReportQA
 from app.db.models.user import User
 from app.db.models.user_profile import UserProfile
 from app.db.models.user_social import UserSocial
@@ -38,8 +41,13 @@ __all__ = [
     "UUIDModel",
     "TimestampMixin",
     "SoftDeleteMixin",
-    # 业务模型
+    # 业务模型 (User Domain)
     "User",
     "UserProfile",
     "UserSocial",
+    # 业务模型 (Marketing Domain)
+    "MarketingReport",
+    "MarketingReportQA",
+    # 业务模型 (Analysis Domain)
+    "AnalysisDimensionResult",
 ]

@@ -8,15 +8,16 @@ Description: 用户核心账号模型
 2. created_at / updated_at (UTC)
 3. is_deleted / deleted_at (软删除支持)
 
-注意：
-采用 "No-Relationship" 模式，不显式定义 ORM relationship。
-如需查询关联数据（如 Profile），请在 Repository 层使用显式 JOIN 或单独查询。
+严格模式更新 (Strict Mode Update):
+- 添加 CheckConstraint 防止关键字段存入空字符串 ("")
+- 遵循 Database as Source of Truth 原则
 
 Author: jinmozhe
 Created: 2025-11-25
+Updated: 2026-02-03 (Add CheckConstraints)
 """
 
-from sqlalchemy import Boolean, String, text
+from sqlalchemy import Boolean, CheckConstraint, String, text
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from app.db.models.base import SoftDeleteMixin, UUIDModel
@@ -30,6 +31,20 @@ class User(UUIDModel, SoftDeleteMixin):
     @declared_attr.directive
     def __tablename__(cls) -> str:
         return "users"
+
+    # --------------------------------------------------------------------------
+    # 数据库级约束 (Constraints)
+    # --------------------------------------------------------------------------
+    __table_args__ = (
+        # 强制手机号非空且不仅是空格
+        CheckConstraint(
+            "length(trim(phone_number)) > 0", name="ck_users_phone_not_empty"
+        ),
+        # 强制密码哈希值非空
+        CheckConstraint(
+            "length(hashed_password) > 0", name="ck_users_password_not_empty"
+        ),
+    )
 
     # --------------------------------------------------------------------------
     # 核心凭证
