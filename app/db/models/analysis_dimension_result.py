@@ -1,8 +1,11 @@
 """
 File: app/db/models/analysis_dimension_result.py
-Description: 多维度分析结果表
+Description: 多维度分析结果表，增加 SYSTEM 角色支持。
 
-主键名统一使用 'id'。
+遵循 STANDARD2026.md 规范：
+1. 强制使用 UUID v7。
+2. 强制数据库级 CheckConstraint。
+3. 强制 DateTime(timezone=True)。
 """
 
 import uuid
@@ -35,7 +38,7 @@ class AnalysisDimensionResult(Base):
     # 1. 字段定义
     # ========================================
 
-    # --- 主键 (统一使用 id) ---
+    # --- 主键 (统一使用 id, UUID v7) ---
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
@@ -59,7 +62,7 @@ class AnalysisDimensionResult(Base):
     role: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        comment="目标角色: BOSS, ANALYST, OPS",
+        comment="目标角色: BOSS, ANALYST, OPS, SYSTEM",
     )
 
     # --- 周期信息 ---
@@ -79,7 +82,7 @@ class AnalysisDimensionResult(Base):
     dimension_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        comment="维度类型: KPI_METRICS, etc.",
+        comment="维度类型: KPI_METRICS, ANALYST_INSIGHTS, etc.",
     )
 
     data_payload: Mapped[dict] = mapped_column(
@@ -88,7 +91,7 @@ class AnalysisDimensionResult(Base):
         comment="该维度的具体分析数据 (JSON对象)",
     )
 
-    # --- 审计字段 ---
+    # --- 审计字段 (遵循 2026 强制时区规范) ---
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -108,13 +111,14 @@ class AnalysisDimensionResult(Base):
     # 2. 数据库级约束与索引
     # ========================================
     __table_args__ = (
-        # ----- Constraints -----
+        # ----- Constraints (Strict Mode) -----
         CheckConstraint(
             "dimension_type IN ('KPI_METRICS', 'ANALYST_INSIGHTS', 'COVERAGE_PRECISION', 'AI_REVENUE_SIMULATION', 'DECISION_CENTER')",
             name="ck_ana_dim_type_valid",
         ),
+        # 核心修改点：增加 SYSTEM 约束
         CheckConstraint(
-            "role IN ('BOSS', 'ANALYST', 'OPS')",
+            "role IN ('BOSS', 'ANALYST', 'OPS', 'SYSTEM')",
             name="ck_ana_dim_role_valid",
         ),
         CheckConstraint("length(trim(user_id)) > 0", name="ck_ana_dim_user_valid"),
