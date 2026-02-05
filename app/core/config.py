@@ -12,6 +12,7 @@ Description: 全局应用配置管理（使用 pydantic-settings）
 
 Author: jinmozhe
 Created: 2025-11-24
+Updated: 2026-02-04 (Add DeepSeek Model Config)
 """
 
 from typing import Literal
@@ -94,6 +95,18 @@ class Settings(BaseSettings):
 
     # JWT 签名算法 (推荐使用 HS256)
     ALGORITHM: str = "HS256"
+
+    # --------------------------------------------------------------------------
+    # 6. LLM / AI Settings (DeepSeek)
+    # --------------------------------------------------------------------------
+    # DeepSeek API Key (必须在 .env 配置)
+    DEEPSEEK_API_KEY: str | None = None
+
+    # Base URL (默认为官方地址，可配置为代理地址)
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+
+    # 模型名称 (支持 deepseek-chat 或 deepseek-reasoner)
+    DEEPSEEK_MODEL: str = "deepseek-reasoner"
 
     # --------------------------------------------------------------------------
     # Properties (便捷属性)
