@@ -10,11 +10,23 @@ Description: FastAPI 应用入口与工厂函数
 
 Author: jinmozhe
 Created: 2025-12-05
-Updated: 2026-01-15 (v2.1: Health check aligns with Unified Response)
+Updated: 2026-02-04 (Fix Windows EventLoop Policy)
 """
 
+import asyncio
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+
+# ------------------------------------------------------------------------------
+# [Fix for Windows] 解决 Windows 下 asyncpg 连接重置/关闭的 Bug
+# 必须在任何 asyncio 循环启动前执行 (放在顶部)
+# ------------------------------------------------------------------------------
+if sys.platform == "win32":
+    # 强制使用 SelectorEventLoop (asyncpg 在 Windows 下必须使用此模式)
+    # ProactorEventLoop (Windows 默认) 不支持 asyncpg 所需的部分特性
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 
 from fastapi import FastAPI
 from fastapi.openapi.docs import get_redoc_html
@@ -94,14 +106,12 @@ def create_app() -> FastAPI:
     register_middlewares(app)
 
     # 2. 注册异常处理器 (直接调用导入的函数)
-    # 注意：app/core/exceptions.py 更新后，此函数依然可用且逻辑已更新
     register_exception_handlers(app)
 
     # 3. 挂载 API 路由
     app.include_router(api_router, prefix=settings.API_V1_STR)
 
     # 4. 挂载健康检查
-    # [变更] 返回类型改为 ResponseModel，保持全站响应结构一致
     @app.get(
         f"{obscure_prefix}/health",
         tags=["health"],

@@ -47,6 +47,7 @@ engine: AsyncEngine = create_async_engine(
     str(settings.SQLALCHEMY_DATABASE_URI),
     echo=settings.DEBUG,
     # 连接池配置 (统一从 config.py 读取，方便生产环境调优)
+    # [关键] Windows 下建议确保 settings.DB_POOL_PRE_PING 为 True
     pool_pre_ping=settings.DB_POOL_PRE_PING,
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,

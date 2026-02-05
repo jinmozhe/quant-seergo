@@ -1,9 +1,11 @@
 """
 File: app/domains/marketing/router.py
-Description: 营销领域路由层 (扁平演示版)
+Description: 营销领域路由层
 
-包含：
-1. POST /list: 直接返回查询到的报告列表
+职责：
+1. 声明 API 契约 (Endpoint, Method, Body)
+2. 调用 Service
+3. 封装统一响应 (ResponseModel)
 """
 
 from typing import Annotated
@@ -36,9 +38,8 @@ MarketingServiceDep = Annotated[MarketingReportService, Depends(get_marketing_se
 
 @router.post(
     "/reports/list",
-    summary="获取报告列表 (Demo Flat)",
-    description="传入 user_id 和 marketplace_id，直接返回最近的报告列表，无嵌套结构。",
-    # 关键修改：直接返回 List[Item]，JSON 中 data 字段将直接是数组
+    summary="获取报告列表 (Demo Lite)",
+    description="传入 user_id 和 marketplace_id，返回精简版报告列表 (不含 mcp_data)。",
     response_model=ResponseModel[list[MarketingReportItem]],
 )
 async def get_report_list_demo(
@@ -47,22 +48,12 @@ async def get_report_list_demo(
     service: MarketingServiceDep,
 ) -> ResponseModel[list[MarketingReportItem]]:
     """
-    扁平列表接口 (POST)
+    精简列表接口 (POST)
     """
-    # 获取数据列表 (List[Row])
-    rows = await service.get_demo_list(req_data.user_id, req_data.marketplace_id)
+    # 1. 调用 Service (Service 已经返回了 List[MarketingReportItem])
+    data = await service.get_demo_list(req_data.user_id, req_data.marketplace_id)
 
-    # Pydantic 的 model_validate 会自动处理 List[Row] -> List[Model] 的转换
-    # 只要 schemas.py 中配置了 from_attributes=True
-
-    # 注意：SQLAlchemy select 返回的是 Row，
-    # 如果是 select(Model) 返回的是 Model 对象，
-    # 如果是 select(Col1, Col2...) 返回的是 Row(tuple-like)。
-    # Pydantic v2 对 Row 的支持很好，可以直接转换。
-
-    # 显式转换为 Pydantic Model 列表 (防御性编码)
-    data = [MarketingReportItem.model_validate(row) for row in rows]
-
+    # 2. 直接包装返回，Router 层不包含任何处理逻辑
     return ResponseModel.success(
         data=data, request_id=getattr(request.state, "request_id", None)
     )
