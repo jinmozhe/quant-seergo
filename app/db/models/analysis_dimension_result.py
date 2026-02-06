@@ -113,7 +113,7 @@ class AnalysisDimensionResult(Base):
     __table_args__ = (
         # ----- Constraints (Strict Mode) -----
         CheckConstraint(
-            "dimension_type IN ('KPI_METRICS', 'ANALYST_INSIGHTS', 'COVERAGE_PRECISION', 'AI_REVENUE_SIMULATION', 'DECISION_CENTER')",
+            "dimension_type IN ('REPORT_HERO','KPI_METRICS', 'ANALYST_INSIGHTS', 'COVERAGE_PRECISION', 'AI_REVENUE_SIMULATION', 'DECISION_CENTER', 'FINAL_CTA')",
             name="ck_ana_dim_type_valid",
         ),
         # 核心修改点：增加 SYSTEM 约束
