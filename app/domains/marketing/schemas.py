@@ -36,10 +36,11 @@ class MarketingReportItem(BaseModel):
     """
 
     id: UUID = Field(..., description="报告ID (UUID v7)")
+    ad_type: str = Field(..., description="广告类型 (开放录入: SP/SB/SD...)")
     period_start: date = Field(..., description="开始日期")
     period_end: date = Field(..., description="结束日期")
-    report_type: str = Field(..., description="报告类型")
-    report_source: str = Field(..., description="报告来源")
+    report_type: str = Field(..., description="报告类型 (开放录入)")
+    report_source: str = Field(..., description="报告来源 (开放录入)")
     pdf_path: str | None = Field(default=None, description="PDF文件路径")
 
     model_config = ConfigDict(from_attributes=True)

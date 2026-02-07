@@ -3,7 +3,9 @@ File: app/db/models/marketing_report.py
 Description: 营销分析报告模型
 
 对应前端 "下载分析报告" 功能。
-为了保持全站一致性，即使独立继承 Base，主键名仍统一使用 'id'。
+变更：
+1. 新增 ad_type 字段
+2. report_type / report_source 改为开放式录入 (移除 Enum 约束，改为非空约束)
 
 Author: jinmozhe
 Created: 2026-02-03
@@ -74,17 +76,24 @@ class MarketingReport(Base):
         comment="报告周期结束日期",
     )
 
-    # --- 业务分类 ---
+    # --- 业务分类 (开放式录入) ---
+    # 新增字段: 广告类型
+    ad_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        comment="广告类型 (开放录入)",
+    )
+
     report_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        comment="报告类型: DIAGNOSTIC, EFFECT",
+        comment="报告类型 (开放录入)",
     )
 
     report_source: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        comment="报告来源: COMPREHENSIVE, SP_ASIN, etc.",
+        comment="报告来源 (开放录入)",
     )
 
     # --- 核心数据与文件 ---
@@ -120,20 +129,26 @@ class MarketingReport(Base):
     # 2. 数据库级约束与索引
     # ========================================
     __table_args__ = (
-        # ----- Check Constraints -----
+        # ----- Check Constraints (Fail Fast) -----
+        # 基础字段非空校验
         CheckConstraint("length(trim(user_id)) > 0", name="ck_mk_report_user_valid"),
         CheckConstraint(
             "length(trim(marketplace_id)) > 0", name="ck_mk_report_market_valid"
         ),
+        # 周期逻辑校验
         CheckConstraint("period_end >= period_start", name="ck_mk_report_period_logic"),
+        # 业务分类非空校验 (替代原 Enum 约束)
+        # STANDARD2026 3.6.1: 即使是开放录入，必填字段也禁止存入空字符串或纯空格
         CheckConstraint(
-            "report_type IN ('DIAGNOSTIC', 'EFFECT')",
-            name="ck_mk_report_type_valid",
+            "length(trim(ad_type)) > 0", name="ck_mk_report_ad_type_not_empty"
         ),
         CheckConstraint(
-            "report_source IN ('COMPREHENSIVE', 'SP_ASIN', 'SP_KEYWORD', 'SB_ASIN', 'SB_VIDEO', 'SB_KEYWORD', 'SD_AUDIENCE', 'SD_OTHER')",
-            name="ck_mk_report_source_valid",
+            "length(trim(report_type)) > 0", name="ck_mk_report_type_not_empty"
         ),
+        CheckConstraint(
+            "length(trim(report_source)) > 0", name="ck_mk_report_source_not_empty"
+        ),
+        # 数据结构校验
         CheckConstraint(
             "jsonb_typeof(mcp_data) = 'object'", name="ck_mk_report_mcp_object"
         ),
@@ -147,6 +162,7 @@ class MarketingReport(Base):
             "marketplace_id",
             "period_start",
             "period_end",
+            "ad_type",  # 加入联合唯一索引
             "report_type",
             "report_source",
             name="uq_mk_report_full_identity",
@@ -156,6 +172,7 @@ class MarketingReport(Base):
             "user_id",
             "marketplace_id",
             "period_start",
+            "ad_type",  # 加入常用查询索引
             "report_type",
         ),
         {"comment": "营销报告表 - 存储用户维度的广告周期性诊断数据"},

@@ -6,6 +6,9 @@ Description: 多维度分析结果表，增加 SYSTEM 角色支持。
 1. 强制使用 UUID v7。
 2. 强制数据库级 CheckConstraint。
 3. 强制 DateTime(timezone=True)。
+
+本次改动：
+- 移除 dimension_type 与 role 的枚举 CheckConstraint，改为开放式录入。
 """
 
 import uuid
@@ -62,7 +65,7 @@ class AnalysisDimensionResult(Base):
     role: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        comment="目标角色: BOSS, ANALYST, OPS, SYSTEM",
+        comment="目标角色: BOSS, ANALYST, OPS, SYSTEM（开放式录入）",
     )
 
     # --- 周期信息 ---
@@ -82,7 +85,7 @@ class AnalysisDimensionResult(Base):
     dimension_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        comment="维度类型: KPI_METRICS, ANALYST_INSIGHTS, etc.",
+        comment="维度类型（开放式录入）",
     )
 
     data_payload: Mapped[dict] = mapped_column(
@@ -112,15 +115,9 @@ class AnalysisDimensionResult(Base):
     # ========================================
     __table_args__ = (
         # ----- Constraints (Strict Mode) -----
-        CheckConstraint(
-            "dimension_type IN ('REPORT_HERO','KPI_METRICS', 'ANALYST_INSIGHTS', 'COVERAGE_PRECISION', 'AI_REVENUE_SIMULATION', 'DECISION_CENTER', 'FINAL_CTA')",
-            name="ck_ana_dim_type_valid",
-        ),
-        # 核心修改点：增加 SYSTEM 约束
-        CheckConstraint(
-            "role IN ('BOSS', 'ANALYST', 'OPS', 'SYSTEM')",
-            name="ck_ana_dim_role_valid",
-        ),
+        # 已移除：
+        # - ck_ana_dim_type_valid (dimension_type 枚举)
+        # - ck_ana_dim_role_valid (role 枚举)
         CheckConstraint("length(trim(user_id)) > 0", name="ck_ana_dim_user_valid"),
         CheckConstraint(
             "length(trim(marketplace_id)) > 0", name="ck_ana_dim_market_valid"

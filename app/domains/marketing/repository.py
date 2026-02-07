@@ -35,6 +35,7 @@ class MarketingReportRepository(BaseRepository[MarketingReport, BaseModel, BaseM
         stmt = (
             select(
                 MarketingReport.id,
+                MarketingReport.ad_type,
                 MarketingReport.period_start,
                 MarketingReport.period_end,
                 MarketingReport.report_type,
