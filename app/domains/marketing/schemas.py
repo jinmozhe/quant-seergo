@@ -8,7 +8,7 @@ Description: 营销领域 Pydantic 模型
 
 Author: jinmozhe
 Created: 2026-02-03
-Updated: 2026-02-04 (Add Chat History Schemas)
+Updated: 2026-02-10 (Add week field)
 """
 
 from datetime import date, datetime
@@ -17,7 +17,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 # ==============================================================================
-# 1. 报告列表相关 (Existing)
+# 1. 报告列表相关
 # ==============================================================================
 
 
@@ -36,6 +36,8 @@ class MarketingReportItem(BaseModel):
     """
 
     id: UUID = Field(..., description="报告ID (UUID v7)")
+    # [NEW] 新增字段: 周数
+    week: str = Field(..., description="第几周")
     ad_type: str = Field(..., description="广告类型 (开放录入: SP/SB/SD...)")
     period_start: date = Field(..., description="开始日期")
     period_end: date = Field(..., description="结束日期")
@@ -70,7 +72,6 @@ class ChatInitResponse(BaseModel):
     qa_id: UUID = Field(..., description="生成的问答记录ID (UUID v7)")
 
 
-# [New] 获取历史记录请求
 class ChatHistoryRequest(BaseModel):
     """
     查询对话历史请求参数
@@ -81,7 +82,6 @@ class ChatHistoryRequest(BaseModel):
     report_id: UUID = Field(..., description="关联的营销报告ID")
 
 
-# [New] 历史记录单项
 class ChatRecordItem(BaseModel):
     """
     问答记录详情

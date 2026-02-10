@@ -1,14 +1,14 @@
 """
-File: app/domains/marketing/service.py
-Description: 营销领域服务
+File: app/domains/insights/service.py
+Description: 洞察领域服务层
 
 职责：
-1. MarketingReportService: 报告列表数据转换
-2. MarketingQARepository: 编排 RAG 流程，调用 LLM (含多轮对话历史)，管理对话状态
+1. InsightsReportService: 报告数据组装与 DTO 转换
+2. InsightsQAService: RAG 核心逻辑 (MCP Data -> LLM Streaming -> DB Update)
 
 Author: jinmozhe
-Created: 2026-02-03
-Updated: 2026-02-10 (Fix TypeError: limit -> period_limit)
+Created: 2026-02-08
+Updated: 2026-02-10 (Fix limit -> period_limit for Top-4 Periods)
 """
 
 import json
@@ -21,47 +21,62 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from app.core.config import settings
 from app.core.exceptions import AppException
-from app.domains.marketing.constants import MarketingErrorCode
-from app.domains.marketing.repository import (
-    MarketingQARepository,
-    MarketingReportRepository,
+from app.domains.insights.constants import InsightsErrorCode
+from app.domains.insights.repository import (
+    InsightsQARepository,
+    InsightsReportRepository,
 )
-from app.domains.marketing.schemas import (
+from app.domains.insights.schemas import (
     ChatHistoryRequest,
     ChatInitRequest,
     ChatInitResponse,
     ChatRecordItem,
-    MarketingReportItem,
+    InsightsReportItem,
+    LatestReportRequest,
+    LatestReportResponse,
 )
 
 
-class MarketingReportService:
-    def __init__(self, repo: MarketingReportRepository):
+class InsightsReportService:
+    def __init__(self, repo: InsightsReportRepository):
         self.repo = repo
 
     async def get_demo_list(
         self, user_id: str, marketplace_id: str
-    ) -> list[MarketingReportItem]:
+    ) -> list[InsightsReportItem]:
         """
-        获取演示用的精简列表。
+        获取报告列表 (精简版)
         """
-        # [FIX] 参数名修正: limit -> period_limit
-        # 之前 Repository 层修改为按周期分组(Top-4 Periods)，因此参数名已变更为 period_limit
+        # [Updated] 使用 period_limit=4 获取最近的4个周期数据
         rows = await self.repo.get_flat_reports(user_id, marketplace_id, period_limit=4)
+        return [InsightsReportItem.model_validate(row) for row in rows]
 
-        # 自动映射 row -> schema, 包含 week 字段
-        items = [MarketingReportItem.model_validate(row) for row in rows]
-        return items
+    async def get_latest_report(
+        self, req: LatestReportRequest
+    ) -> LatestReportResponse | None:
+        """
+        获取最新报告详情 (含大字段)
+        """
+        row = await self.repo.get_latest_report(
+            user_id=req.user_id,
+            marketplace_id=req.marketplace_id,
+            ad_type=req.ad_type,
+            report_type=req.report_type,
+            report_source=req.report_source,
+        )
+        if not row:
+            return None
+        return LatestReportResponse.model_validate(row)
 
 
-class MarketingQAService:
+class InsightsQAService:
     """
-    营销智能问答服务 (RAG Core)
+    洞察智能问答服务 (RAG Core)
     """
 
-    def __init__(self, repo: MarketingQARepository):
+    def __init__(self, repo: InsightsQARepository):
         self.repo = repo
-        # 初始化 OpenAI 异步客户端 (复用 DeepSeek 配置)
+        # 初始化 LLM 客户端
         self.llm_client = AsyncOpenAI(
             api_key=settings.DEEPSEEK_API_KEY,
             base_url=settings.DEEPSEEK_BASE_URL,
@@ -71,15 +86,15 @@ class MarketingQAService:
 
     async def init_chat(self, req: ChatInitRequest) -> ChatInitResponse:
         """
-        第一步：初始化对话。
-        创建数据库记录，状态为 PENDING。
+        第一步：初始化对话
         """
-        # 1. 校验 Report 是否存在
-        mcp_data = await self.repo.get_report_mcp_data(req.report_id)
+        # 1. 校验报告是否存在 (Fail Fast)
+        # 仅检查是否存在 mcp_data
+        mcp_data = await self.repo.get_report_context(req.report_id)
         if not mcp_data:
-            raise AppException(MarketingErrorCode.REPORT_NOT_FOUND)
+            raise AppException(InsightsErrorCode.REPORT_CONTEXT_MISSING)
 
-        # 2. 创建 QA 记录
+        # 2. 创建 QA 记录 (PENDING)
         qa_record = await self.repo.create_qa_record(
             user_id=req.user_id,
             marketplace_id=req.marketplace_id,
@@ -87,7 +102,7 @@ class MarketingQAService:
             question=req.question,
         )
 
-        # 3. 提交事务 (生成 ID)
+        # 3. 提交事务
         await self.repo.session.commit()
         await self.repo.session.refresh(qa_record)
 
@@ -95,7 +110,7 @@ class MarketingQAService:
 
     async def stream_answer_generator(self, qa_id: UUID) -> AsyncGenerator[str, None]:
         """
-        第二步：流式生成答案 (Async Generator)。
+        第二步：流式生成答案 (Async Generator)
         """
         # 1. 获取 QA 记录
         qa_record = await self.repo.get_qa_by_id(qa_id)
@@ -103,31 +118,37 @@ class MarketingQAService:
             yield "data: [ERROR] Session not found\n\n"
             return
 
-        # 2. 获取上下文 (mcp_data)
-        mcp_data = await self.repo.get_report_mcp_data(qa_record.report_id)
+        # 2. 获取上下文 (mcp_data Only)
+        mcp_data = await self.repo.get_report_context(qa_record.report_id)
         if not mcp_data:
-            yield "data: [ERROR] Report context missing\n\n"
+            yield "data: [ERROR] Report context data missing\n\n"
             return
 
-        # 3. 更新状态: PENDING -> GENERATING
+        # 3. 更新状态: GENERATING
         await self.repo.update_status(qa_id, "GENERATING")
         await self.repo.session.commit()
 
-        # 4. 准备 Prompt 和 消息链
-        system_prompt = (
-            "你是一个亚马逊广告营销专家。请根据提供的 JSON 数据（营销报告）回答用户问题。"
-            "回答要专业、简洁，并使用 Markdown 格式。"
-            "如果数据中没有相关信息，请直接说明。"
-        )
+        # 4. 构建 System Prompt
+        # 直接序列化 mcp_data
         context_str = json.dumps(mcp_data, ensure_ascii=False)
 
-        # A. 基础 System Message
+        system_prompt = (
+            "你是一个专业的广告营销数据分析师。请根据提供的 JSON 数据（MCP 洞察报告）"
+            "回答用户的问题。\n"
+            "要求：\n"
+            "1. 引用具体数据支持你的观点。\n"
+            "2. 回答风格专业、客观、简洁。\n"
+            "3. 使用 Markdown 格式。\n"
+            "4. 如果数据中没有相关信息，请明确说明，不要编造。"
+        )
+
+        # A. 基础系统消息
         messages: list[ChatCompletionMessageParam] = [
             {"role": "system", "content": f"{system_prompt}\n\n数据:\n{context_str}"}
         ]
 
         # B. 注入历史记录 (Sliding Window Strategy)
-        # 获取最近 5 条历史对话，帮助模型理解上下文 (如 "为什么 ROAS 这么低?")
+        # 限制最近 5 条，防止 Token 爆炸，同时提供必要的对话上下文
         history_records = await self.repo.get_recent_history(
             report_id=qa_record.report_id,
             current_qa_id=qa_id,
@@ -136,23 +157,23 @@ class MarketingQAService:
 
         for record in history_records:
             if record.question and record.answer:
-                # User Message
+                # 必须按 User -> Assistant 顺序配对
                 messages.append({"role": "user", "content": record.question})
-                # Assistant Message (⚠️注意：只放 answer，不放 CoT 过程)
+                # [Critical] R1 模型优化: 仅注入最终 Answer，不注入 CoT (Reasoning)，保持上下文纯净
                 messages.append({"role": "assistant", "content": record.answer})
 
-        # C. 放入当前用户的新问题
+        # C. 追加当前用户问题
         messages.append({"role": "user", "content": qa_record.question})
 
         full_answer_buffer = []
 
         try:
-            # 5. 使用 OpenAI SDK 调用 DeepSeek
+            # 5. 调用 LLM
             stream = await self.llm_client.chat.completions.create(
                 model=settings.DEEPSEEK_MODEL,
                 messages=messages,
                 stream=True,
-                temperature=0.5,
+                temperature=0.3,
             )
 
             async for chunk in stream:
@@ -161,15 +182,14 @@ class MarketingQAService:
 
                 if content:
                     full_answer_buffer.append(content)
-                    # 实时推送 (SSE 格式: data: <json>\n\n)
+                    # SSE 格式推送
                     yield f"data: {json.dumps({'content': content}, ensure_ascii=False)}\n\n"
 
-            # 6. [后端闭环] 流结束后，更新数据库为 COMPLETED
+            # 6. [闭环] 更新数据库
             final_answer = "".join(full_answer_buffer)
             await self.repo.update_answer(qa_id, final_answer, "COMPLETED")
             await self.repo.session.commit()
 
-            # 发送结束信号
             yield "data: [DONE]\n\n"
 
         except APIError as e:
@@ -184,7 +204,7 @@ class MarketingQAService:
 
     async def _handle_failure(self, qa_id: UUID) -> None:
         """
-        辅助方法：处理失败状态回写
+        辅助: 失败状态回写
         """
         try:
             await self.repo.update_status(qa_id, "FAILED")
@@ -194,7 +214,7 @@ class MarketingQAService:
 
     async def get_chat_history(self, req: ChatHistoryRequest) -> list[ChatRecordItem]:
         """
-        获取对话历史列表
+        获取对话历史
         """
         rows = await self.repo.get_chat_history(
             user_id=req.user_id,

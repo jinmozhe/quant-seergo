@@ -12,7 +12,7 @@ from app.core.response import ResponseModel
 from app.domains.analysis.dependencies import AnalysisServiceDep
 from app.domains.analysis.schemas import AnalysisLatestQuery
 
-router = APIRouter(tags=["analysis"])
+router = APIRouter()
 
 
 @router.post(

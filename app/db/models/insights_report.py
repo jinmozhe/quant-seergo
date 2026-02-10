@@ -1,15 +1,13 @@
 """
-File: app/db/models/marketing_report.py
-Description: 营销分析报告模型
+File: app/db/models/insights_report.py
+Description: 洞察分析报告模型
 
-对应前端 "下载分析报告" 功能。
-变更：
-1. 新增 ad_type 字段
-2. report_type / report_source 改为开放式录入 (移除 Enum 约束，改为非空约束)
-3. 新增 week 字段 (2026-02-XX)
+对应前端 "下载洞察报告" 功能。
+基于营销报告模型扩展，专注于 KPI、洞察结论与 AI 分析数据。
 
 Author: jinmozhe
-Created: 2026-02-03
+Created: 2026-02-08
+Updated: 2025-XX-XX
 """
 
 import uuid
@@ -32,18 +30,19 @@ from uuid6 import uuid7
 from app.db.models.base import Base
 
 
-class MarketingReport(Base):
+class InsightsReport(Base):
     """
-    营销报告表
+    洞察报告表
+    包含 KPI 指标、深度洞察及 AI 分析结论
     """
 
-    __tablename__ = "marketing_report"
+    __tablename__ = "insights_report"
 
     # ========================================
     # 1. 字段定义 (Columns Definitions)
     # ========================================
 
-    # --- 主键 (统一使用 id) ---
+    # --- 主键 ---
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
@@ -78,7 +77,7 @@ class MarketingReport(Base):
     )
 
     # [NEW] 新增字段: 周数
-    # 仅用于前端展示，不参与唯一性校验
+    # 仅用于前端展示和业务标记，不参与唯一性校验
     week: Mapped[str] = mapped_column(
         String(10),
         nullable=False,
@@ -86,7 +85,6 @@ class MarketingReport(Base):
     )
 
     # --- 业务分类 (开放式录入) ---
-    # 新增字段: 广告类型
     ad_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
@@ -105,13 +103,34 @@ class MarketingReport(Base):
         comment="报告来源 (开放录入)",
     )
 
-    # --- 核心数据与文件 ---
+    # --- 核心数据 ---
+
+    # [NEW] 新增字段: MCP 数据
     mcp_data: Mapped[dict] = mapped_column(
         JSONB,
         nullable=False,
         comment="MCP 报告核心数据 (JSON对象)",
     )
 
+    kpi: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        comment="关键绩效指标数据 (JSON对象)",
+    )
+
+    insights: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        comment="深度洞察结论 (JSON对象)",
+    )
+
+    ai: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        comment="AI 分析与建议 (JSON对象)",
+    )
+
+    # --- 文件 ---
     pdf_path: Mapped[str | None] = mapped_column(
         String(512),
         nullable=True,
@@ -139,52 +158,59 @@ class MarketingReport(Base):
     # ========================================
     __table_args__ = (
         # ----- Check Constraints (Fail Fast) -----
-        # 基础字段非空校验
-        CheckConstraint("length(trim(user_id)) > 0", name="ck_mk_report_user_valid"),
+        CheckConstraint("length(trim(user_id)) > 0", name="ck_ins_report_user_valid"),
         CheckConstraint(
-            "length(trim(marketplace_id)) > 0", name="ck_mk_report_market_valid"
-        ),
-        # 周期逻辑校验
-        CheckConstraint("period_end >= period_start", name="ck_mk_report_period_logic"),
-        # [NEW] 周数非空校验
-        CheckConstraint("length(trim(week)) > 0", name="ck_mk_report_week_not_empty"),
-        # 业务分类非空校验 (替代原 Enum 约束)
-        # STANDARD2026 3.6.1: 即使是开放录入，必填字段也禁止存入空字符串或纯空格
-        CheckConstraint(
-            "length(trim(ad_type)) > 0", name="ck_mk_report_ad_type_not_empty"
+            "length(trim(marketplace_id)) > 0", name="ck_ins_report_market_valid"
         ),
         CheckConstraint(
-            "length(trim(report_type)) > 0", name="ck_mk_report_type_not_empty"
+            "period_end >= period_start", name="ck_ins_report_period_logic"
+        ),
+        # [UPDATE] 增加 week 的非空校验，但不加入唯一索引
+        CheckConstraint("length(trim(week)) > 0", name="ck_ins_report_week_not_empty"),
+        CheckConstraint(
+            "length(trim(ad_type)) > 0", name="ck_ins_report_ad_type_not_empty"
         ),
         CheckConstraint(
-            "length(trim(report_source)) > 0", name="ck_mk_report_source_not_empty"
+            "length(trim(report_type)) > 0", name="ck_ins_report_type_not_empty"
         ),
-        # 数据结构校验
         CheckConstraint(
-            "jsonb_typeof(mcp_data) = 'object'", name="ck_mk_report_mcp_object"
+            "length(trim(report_source)) > 0", name="ck_ins_report_source_not_empty"
         ),
+        # [UPDATE] 增加 mcp_data 结构校验
+        CheckConstraint(
+            "jsonb_typeof(mcp_data) = 'object'", name="ck_ins_report_mcp_data_object"
+        ),
+        CheckConstraint(
+            "jsonb_typeof(kpi) = 'object'", name="ck_ins_report_kpi_object"
+        ),
+        CheckConstraint(
+            "jsonb_typeof(insights) = 'object'", name="ck_ins_report_insights_object"
+        ),
+        CheckConstraint("jsonb_typeof(ai) = 'object'", name="ck_ins_report_ai_object"),
         CheckConstraint(
             "pdf_path IS NULL OR length(trim(pdf_path)) > 0",
-            name="ck_mk_report_pdf_path_valid",
+            name="ck_ins_report_pdf_path_valid",
         ),
         # ----- Unique & Indexes -----
+        # [保持原样] 不包含 week，因为 period_start/end 已决定唯一性
         UniqueConstraint(
             "user_id",
             "marketplace_id",
             "period_start",
             "period_end",
-            "ad_type",  # 加入联合唯一索引
+            "ad_type",
             "report_type",
             "report_source",
-            name="uq_mk_report_full_identity",
+            name="uq_ins_report_full_identity",
         ),
+        # [保持原样] 不包含 week，利用 period_start 排序/筛选即可
         Index(
-            "ix_mk_report_lookup",
+            "ix_ins_report_lookup",
             "user_id",
             "marketplace_id",
             "period_start",
-            "ad_type",  # 加入常用查询索引
+            "ad_type",
             "report_type",
         ),
-        {"comment": "营销报告表 - 存储用户维度的广告周期性诊断数据"},
+        {"comment": "洞察报告表 - 存储包含 KPI、洞察和 AI 建议的综合分析数据"},
     )
